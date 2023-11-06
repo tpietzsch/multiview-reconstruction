@@ -109,6 +109,9 @@ like Selective Plane Illumination Microscopy (SPIM) Data.</description>
 		<bigdataviewer-core.version>10.4.13-SNAPSHOT</bigdataviewer-core.version>
 		<bigdataviewer-vistools.version>1.0.0-beta-33</bigdataviewer-vistools.version>
 		<spim_data.version>2.2.8-SNAPSHOT</spim_data.version>
+
+		<!-- JavaFx Version-->
+		<javafx.version>21.0.1</javafx.version>
 	</properties>
 
 	<repositories>
@@ -119,6 +122,28 @@ like Selective Plane Illumination Microscopy (SPIM) Data.</description>
 	</repositories>
 
 	<dependencies>
+		<!-- JavaFx dependencies-->
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-base</artifactId>
+			<version>${javafx.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-controls</artifactId>
+			<version>${javafx.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-graphics</artifactId>
+			<version>${javafx.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-swing</artifactId>
+			<version>${javafx.version}</version>
+		</dependency>
+
 		<!-- BigDataViewer dependencies -->
 		<dependency>
 			<groupId>sc.fiji</groupId>

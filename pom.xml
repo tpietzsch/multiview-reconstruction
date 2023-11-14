@@ -105,8 +105,10 @@ like Selective Plane Illumination Microscopy (SPIM) Data.</description>
 		<!-- NB: Deploy releases to the SciJava Maven repository. -->
 		<releaseProfiles>sign,deploy-to-scijava</releaseProfiles>
 
-		<bigdataviewer-core.version>10.4.12</bigdataviewer-core.version>
+		<enforcer.skip>true</enforcer.skip>
+		<bigdataviewer-core.version>10.4.13-SNAPSHOT</bigdataviewer-core.version>
 		<bigdataviewer-vistools.version>1.0.0-beta-33</bigdataviewer-vistools.version>
+		<spim_data.version>2.2.8-SNAPSHOT</spim_data.version>
 	</properties>
 
 	<repositories>
@@ -276,7 +278,7 @@ like Selective Plane Illumination Microscopy (SPIM) Data.</description>
 			<artifactId>picocli</artifactId>
 		</dependency>
 	</dependencies>
-	
+
 	<profiles>
 	<profile>
 			<id>fatjar</id>

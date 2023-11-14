@@ -9,12 +9,12 @@
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 2 of the
  * License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
@@ -65,6 +65,7 @@ import mpicbg.spim.data.SpimDataException;
 import mpicbg.spim.data.generic.AbstractSpimData;
 import mpicbg.spim.data.generic.XmlIoAbstractSpimData;
 import mpicbg.spim.data.generic.base.Entity;
+import mpicbg.spim.data.generic.sequence.AbstractSequenceDescription;
 import mpicbg.spim.data.generic.sequence.BasicViewDescription;
 import mpicbg.spim.data.generic.sequence.BasicViewSetup;
 import mpicbg.spim.data.sequence.Illumination;
@@ -149,20 +150,20 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 	{
 		super( explorer, data, xml, io );
 
-		
+
 		if ( data instanceof SpimData2 )
 			((SpimData2)data).gridMoveRequested = false;
 
 		popups = initPopups();
 		initComponent();
 
-		if ( requestStartBDV && 
-				(ViewerImgLoader.class.isInstance( data.getSequenceDescription().getImgLoader() ) 
+		if ( requestStartBDV &&
+				(ViewerImgLoader.class.isInstance( data.getSequenceDescription().getImgLoader() )
 				|| data.getSequenceDescription().getImgLoader().getClass().getSimpleName().equals( "FractalImgLoader" )
 				|| FileMapImgLoaderLOCI2.class.isInstance( data.getSequenceDescription().getImgLoader() ) ) )
 		{
 			final BDVPopup bdvpopup = bdvPopup();
-			
+
 			if ( bdvpopup != null )
 			{
 				if (!bdvPopup().bdvRunning())
@@ -193,7 +194,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 
 		final DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
 		centerRenderer.setHorizontalAlignment( JLabel.CENTER );
-		
+
 		// center all columns
 		for ( int column = 0; column < tableModel.getColumnCount(); ++column )
 		{
@@ -278,14 +279,14 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 		header.add( buttons, BorderLayout.EAST );
 		this.add( header, BorderLayout.NORTH );
 		this.add( new JScrollPane( table ), BorderLayout.CENTER );
-		
+
 		final JPanel footer = new JPanel(new BorderLayout());
 		this.groupTilesCheckbox = new JCheckBox("Group Tiles", true);
 		this.groupIllumsCheckbox = new JCheckBox("Group Illuminations", true);
 		footer.add(groupTilesCheckbox, BorderLayout.EAST);
 		footer.add(groupIllumsCheckbox, BorderLayout.WEST);
 		this.add(footer, BorderLayout.SOUTH);
-		
+
 		groupTilesCheckbox.addActionListener(e -> {
 			if (groupTilesCheckbox.isSelected())
 				tableModel.addGroupingFactor(Tile.class);
@@ -332,7 +333,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 			@Override
 			public void valueChanged(final ListSelectionEvent arg0)
 			{
-				
+
 				BDVPopup b = bdvPopup();
 
 				selectedRows.clear();
@@ -348,10 +349,10 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 				List<List<BasicViewDescription< ? >>> selectedList = new ArrayList<>();
 				for (List<BasicViewDescription< ? >> selectedI : selectedRows)
 					selectedList.add( selectedI );
-								
+
 				for ( int i = 0; i < listeners.size(); ++i )
 					listeners.get( i ).selectedViewDescriptions( selectedList );
-				
+
 				/*
 				BDVPopup b = bdvPopup();
 
@@ -402,18 +403,18 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 				*/
 
 				if ( b != null && b.bdv != null )
-				{	
+				{
 					updateBDV( b.bdv, colorMode, data, firstSelectedVD, selectedRows);
-					
+
 				}
-					
-				
+
+
 			}
 
-			
+
 		};
 	}
-	
+
 	public static void updateBDV(final BigDataViewer bdv, final boolean colorMode, final AbstractSpimData< ? > data,
 			BasicViewDescription< ? > firstVD,
 			final Collection< List< BasicViewDescription< ? >> > selectedRows)
@@ -434,8 +435,8 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 		final boolean[] active = new boolean[ data.getSequenceDescription().getViewSetupsOrdered().size() ];
 
 		// set selected views active
-		// also check whether at least one "group" of views is a real group (not just a single, wrapped, view) 
-		boolean anyGrouped = false;		
+		// also check whether at least one "group" of views is a real group (not just a single, wrapped, view)
+		boolean anyGrouped = false;
 		for ( final List<BasicViewDescription< ? >> vds : selectedRows )
 		{
 			if (vds.size() > 1)
@@ -477,25 +478,32 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 	{
 		List<BasicViewDescription< ? > > vds = new ArrayList<>();
 		Map<BasicViewDescription< ? >, ConverterSetup> vdToCs = new HashMap<>();
-		
+
+		// TODO (TP) Add Group operations also for ViewSetup instead of ViewDescription
+		//           This should simplify a lot of things
+
+		final AbstractSequenceDescription< ?, ?, ? > seq = data.getSequenceDescription();
+		final List< TimePoint > timePointsOrdered = seq.getTimePoints().getTimePointsOrdered();
+		final int currentTimepointId = timePointsOrdered.get( bdv.getViewer().state().getCurrentTimepoint() ).getId();
+		// TODO (TP) This is not a good way to get to "all ViewSetup ids". It should rather be done for the AbstractSpimData
+		//                --> seq.getViewSetupsOrdered()
 		for (ConverterSetup cs : bdv.getSetupAssignments().getConverterSetups())
 		{
-			Integer timepointId = data.getSequenceDescription().getTimePoints().getTimePointsOrdered().get( bdv.getViewer().getState().getCurrentTimepoint()).getId();
-			BasicViewDescription< ? > vd = data.getSequenceDescription().getViewDescriptions().get( new ViewId( timepointId, cs.getSetupId() ) );
+			BasicViewDescription< ? > vd = seq.getViewDescriptions().get( new ViewId( currentTimepointId, cs.getSetupId() ) );
 			vds.add( vd );
 			vdToCs.put( vd, cs );
 		}
-		
+
 		List< Group< BasicViewDescription< ? > > > vdGroups = Group.combineBy( vds, groupingFactors );
-		
+
 		// nothing to group
 		if (vdGroups.size() < 1)
 			return;
-		
+
 		// one group -> white
 		if (vdGroups.size() == 1)
 		{
-			FilteredAndGroupedExplorerPanel.whiteSources(bdv.getSetupAssignments().getConverterSetups());
+			FilteredAndGroupedExplorerPanel.whiteSources( bdv.getConverterSetups().getConverterSetups( bdv.getViewer().state().snapshot().getSources() ) );
 			return;
 		}
 
@@ -520,7 +528,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 				cs.setColor( color );
 		}
 	}
-	
+
 	public static void setFusedModeSimple( final BigDataViewer bdv, final AbstractSpimData< ? > data )
 	{
 		if ( bdv == null )
@@ -567,7 +575,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 	public static int getBDVSourceIndex( final BasicViewSetup vs, final AbstractSpimData< ? > data )
 	{
 		final List< ? extends BasicViewSetup > list = data.getSequenceDescription().getViewSetupsOrdered();
-		
+
 		for ( int i = 0; i < list.size(); ++i )
 			if ( list.get( i ).getId() == vs.getId() )
 				return i;
@@ -595,7 +603,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 			if ( SpimData2.class.isInstance( data ) )
 			{
 				final ViewInterestPoints vip = ( (SpimData2)data ).getViewInterestPoints();
-				
+
 				for ( final ViewInterestPointLists vipl : vip.getViewInterestPoints().values() )
 				{
 					for ( final String label : vipl.getHashMap().keySet() )
@@ -637,7 +645,7 @@ public class ViewSetupExplorerPanel< AS extends AbstractSpimData< ? > > extends 
 				if ( arg0.getKeyChar() == 'c' || arg0.getKeyChar() == 'C' )
 				{
 					colorMode = !colorMode;
-					
+
 					System.out.println( "colormode" );
 
 					if (colorMode)

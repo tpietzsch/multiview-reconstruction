@@ -9,12 +9,12 @@
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 2 of the
  * License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
@@ -33,13 +33,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import mpicbg.spim.data.generic.AbstractSpimData;
 import mpicbg.spim.data.generic.base.Entity;
 import mpicbg.spim.data.generic.sequence.AbstractSequenceDescription;
 import mpicbg.spim.data.generic.sequence.BasicViewDescription;
+import mpicbg.spim.data.generic.sequence.BasicViewSetup;
 import mpicbg.spim.data.sequence.Channel;
 import mpicbg.spim.data.sequence.TimePoint;
 import mpicbg.spim.data.sequence.ViewId;
+import mpicbg.spim.data.sequence.ViewSetup;
 import net.imglib2.util.Pair;
 import net.imglib2.util.ValuePair;
 
@@ -152,11 +156,11 @@ public class Group< V > implements Iterable< V >
 	/**
 	 * Combining means to combine all views that share everything except what they are grouped after, e.g. channel
 	 * (for example used to group GFP, RFP, DAPI for a Tile)
-	 * 
+	 *
 	 * v1: angle 0, channel 0
 	 * v2: angle 1, channel 0
 	 * v3: angle 1, channel 1
-	 * 
+	 *
 	 * combine by channel: [v1], [v2 v3]
 	 *
 	 * @param vds - the ViewDescriptions to process
@@ -173,11 +177,11 @@ public class Group< V > implements Iterable< V >
 	/**
 	 * Split means to make a group for every instance of an attribute, e.g. channel
 	 * (for example group everthing that is GFP and everything that it RFP)
-	 * 
+	 *
 	 * v1: angle 0, channel 0
 	 * v2: angle 1, channel 0
 	 * v3: angle 1, channel 1
-	 * 
+	 *
 	 * split by channel: [v1 v2], [v3]
 	 *
 	 * @param vds - the ViewDescriptions to process
@@ -195,14 +199,14 @@ public class Group< V > implements Iterable< V >
 	/**
 	 * Combining means to combine all views that share everything except what they are grouped after, e.g. channel
 	 * (for example used to group GFP, RFP, DAPI for a Tile)
-	 * 
+	 *
 	 * Split means the opposite in some way, make a group for every instance of an attribute, e.g. channel
 	 * (for example group everthing that is GFP and everything that it RFP)
-	 * 
+	 *
 	 * v1: angle 0, channel 0
 	 * v2: angle 1, channel 0
 	 * v3: angle 1, channel 1
-	 * 
+	 *
 	 * combine by channel: [v1], [v2 v3]
 	 * split by channel: [v1 v2], [v3]
 	 *
@@ -219,8 +223,8 @@ public class Group< V > implements Iterable< V >
 
 		// pre-sort vd List
 		Collections.sort( vds );
-		
-		
+
+
 		for (V vd : vds) {
 			List<Entity> key = new ArrayList<>();
 
@@ -240,6 +244,41 @@ public class Group< V > implements Iterable< V >
 		}
 
 		return new ArrayList<>(res.values());
+	}
+
+	// TODO (TP) the following is the same as combineOrSplitBy(), but for BasicViewSetup instead of BasicViewDescription
+	public static < V extends BasicViewSetup > List< Group< V > > vsCombineOrSplitBy(
+			final List< V > vds,
+			final Set< Class< ? extends Entity > > groupingFactors,
+			boolean combine )
+	{
+		if ( vds.isEmpty() )
+			return Collections.emptyList();
+
+		// pre-sort vd List
+		vds.sort( Comparator.comparingInt( BasicViewSetup::getId ) );
+
+		// get list of available attributes
+		final List< Class< ? extends Entity > > factors = vds.get( 0 ).getAttributes().values()
+				.stream()
+				.map( Entity::getClass )
+				.collect( Collectors.toList() );
+
+		// derive key attributes
+		if ( combine )
+			factors.removeAll( groupingFactors );
+		else
+			factors.retainAll( groupingFactors );
+
+		final Map< List< Entity >, Group< V > > res = new HashMap<>();
+		for ( V vd : vds )
+		{
+			final List< Entity > key = new ArrayList<>();
+			factors.forEach( f -> key.add( vd.getAttribute( f ) ) );
+			res.computeIfAbsent( key, k -> new Group<>() ).getViews().add( vd );
+		}
+
+		return new ArrayList<>( res.values() );
 	}
 
 	public static < V extends ViewId > ArrayList< Group< V > > toGroups( final Collection< V > views )
@@ -337,7 +376,7 @@ public class Group< V > implements Iterable< V >
 				{
 					attributesSame = false;
 				}
-				
+
 				if ( attributesSame )
 				{
 					localGroup.add( input.get( i ) );
@@ -412,7 +451,7 @@ public class Group< V > implements Iterable< V >
 
 	/**
 	 * Identifies all groups that a certain view is a member of
-	 * 
+	 *
 	 * @param view - a view
 	 * @param groups - all views
 	 * @param <V> - view id type
@@ -475,7 +514,7 @@ public class Group< V > implements Iterable< V >
 
 			final Group< V > groupA = g.get( indexA );
 			final Group< V > groupB = g.get( indexB );
-	
+
 			g.remove( indexB ); // always bigger then indexA
 			g.remove( indexA );
 
@@ -490,7 +529,7 @@ public class Group< V > implements Iterable< V >
 	 *
 	 * @param groups list of Groups
 	 * @param <V> - view id type
-	 * @return index of first overlapping pair (Gi, Gj) in grops  
+	 * @return index of first overlapping pair (Gi, Gj) in grops
 	 */
 	public static < V > Pair< Integer, Integer > nextOverlappingGroup( final List< Group< V > > groups )
 	{

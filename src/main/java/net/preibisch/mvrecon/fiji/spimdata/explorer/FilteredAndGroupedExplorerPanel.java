@@ -9,12 +9,12 @@
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 2 of the
  * License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/gpl-2.0.html>.
@@ -22,6 +22,10 @@
  */
 package net.preibisch.mvrecon.fiji.spimdata.explorer;
 
+import bdv.tools.brightness.ConverterSetup;
+import bdv.viewer.Source;
+import bdv.viewer.SourceAndConverter;
+import bdv.viewer.ViewerState;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
@@ -30,9 +34,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JTable;
@@ -41,11 +45,8 @@ import javax.swing.event.ListSelectionListener;
 
 import bdv.BigDataViewer;
 import bdv.tools.HelpDialog;
-import bdv.tools.brightness.ConverterSetup;
 import bdv.tools.transformation.TransformedSource;
 import bdv.viewer.DisplayMode;
-import bdv.viewer.VisibilityAndGrouping;
-import bdv.viewer.state.SourceState;
 import mpicbg.spim.data.SpimDataException;
 import mpicbg.spim.data.generic.AbstractSpimData;
 import mpicbg.spim.data.generic.XmlIoAbstractSpimData;
@@ -53,8 +54,6 @@ import mpicbg.spim.data.generic.base.Entity;
 import mpicbg.spim.data.generic.base.NamedEntity;
 import mpicbg.spim.data.generic.sequence.AbstractSequenceDescription;
 import mpicbg.spim.data.generic.sequence.BasicViewDescription;
-import mpicbg.spim.data.generic.sequence.BasicViewSetup;
-import mpicbg.spim.data.sequence.Channel;
 import mpicbg.spim.data.sequence.TimePoint;
 import mpicbg.spim.data.sequence.ViewId;
 import net.imglib2.realtransform.AffineTransform3D;
@@ -64,8 +63,10 @@ import net.preibisch.mvrecon.fiji.spimdata.GroupedViews;
 import net.preibisch.mvrecon.fiji.spimdata.SpimData2;
 import net.preibisch.mvrecon.fiji.spimdata.SpimDataTools;
 import net.preibisch.mvrecon.fiji.spimdata.explorer.bdv.BDVFlyThrough;
+import net.preibisch.mvrecon.fiji.spimdata.explorer.bdv.BDVUtils;
 import net.preibisch.mvrecon.fiji.spimdata.explorer.popup.BDVPopup;
 import net.preibisch.mvrecon.fiji.spimdata.explorer.popup.ExplorerWindowSetable;
+import net.preibisch.mvrecon.fiji.spimdata.explorer.util.ColorStream;
 import net.preibisch.mvrecon.fiji.spimdata.interestpoints.InterestPoints;
 import net.preibisch.mvrecon.fiji.spimdata.interestpoints.ViewInterestPointLists;
 import net.preibisch.mvrecon.fiji.spimdata.interestpoints.ViewInterestPoints;
@@ -362,12 +363,17 @@ public abstract class FilteredAndGroupedExplorerPanel< AS extends AbstractSpimDa
 			return;
 
 		// reset manual transform for all views
-		for ( int sourceIdx = 0; sourceIdx < bdv.getViewer().getVisibilityAndGrouping().getSources().size(); sourceIdx++ )
-		{
-			SourceState< ? > s = bdv.getViewer().getVisibilityAndGrouping().getSources().get( sourceIdx );
-			( ( TransformedSource< ? > ) s.getSpimSource() ).setFixedTransform( new AffineTransform3D() );
-			( ( TransformedSource< ? > ) s.getSpimSource() ).setIncrementalTransform( new AffineTransform3D() );
-		}
+		final AffineTransform3D identity = new AffineTransform3D();
+		final ViewerState state = bdv.getViewer().state().snapshot();
+		state.getSources().forEach( sourceAndConverter -> {
+			final Source< ? > source = sourceAndConverter.getSpimSource();
+			if ( source instanceof TransformedSource )
+			{
+				final TransformedSource< ? > tfsource = ( TransformedSource< ? > ) source;
+				tfsource.setFixedTransform( identity );
+				tfsource.setIncrementalTransform( identity );
+			}
+		} );
 	}
 
 	public static void updateBDV(
@@ -393,25 +399,35 @@ public abstract class FilteredAndGroupedExplorerPanel< AS extends AbstractSpimDa
 		if ( firstVD == null )
 			firstVD = selectedRows.iterator().next().get( 0 );
 
+		final ViewerState state = bdv.getViewer().state();
+
 		// always use the first timepoint
 		final TimePoint firstTP = firstVD.getTimePoint();
-		if ( bdv.getViewer().getState().getCurrentTimepoint() != getBDVTimePointIndex( firstTP, data ) )
-			bdv.getViewer().setTimepoint( getBDVTimePointIndex( firstTP, data ) );
+		state.setCurrentTimepoint( getBDVTimePointIndex( firstTP, data ) );
 
-		final boolean[] active = new boolean[data.getSequenceDescription().getViewSetupsOrdered().size()];
+		final Set< Integer > selectedViewSetupIds = selectedRows.stream()
+				.flatMap( Collection::stream )
+				.filter( vd -> vd.getTimePointId() == firstTP.getId() )
+				.map( ViewId::getViewSetupId )
+				.collect( Collectors.toSet() );
 
-		for ( final List< ? extends BasicViewDescription< ? > > vds : selectedRows )
-			for ( BasicViewDescription< ? > vd : vds){
-				if ( vd.getTimePointId() == firstTP.getId() )
-					active[getBDVSourceIndex( vd.getViewSetup(), data )] = true;
-			}
+		final List< SourceAndConverter< ? > > active = new ArrayList<>();
+		synchronized ( state )
+		{
+			BDVUtils.forEachAbstractSpimSource(
+					state.getSources(),
+					( soc, source ) -> {
+						if ( selectedViewSetupIds.contains( source.getSetupId() ) )
+							active.add( soc );
+					} );
+		}
+		setVisibleSources( state, active );
 
 //		if ( selectedRows.size() > 1 && colorMode )
 //			colorSources( bdv.getSetupAssignments().getConverterSetups(), data, channelColors);
 //		else
 //			whiteSources( bdv.getSetupAssignments().getConverterSetups() );
 
-		setVisibleSources( bdv.getViewer().getVisibilityAndGrouping(), active );
 		bdv.getViewer().requestRepaint();
 	}
 
@@ -420,40 +436,35 @@ public abstract class FilteredAndGroupedExplorerPanel< AS extends AbstractSpimDa
 		if ( bdv == null )
 			return;
 
-		if ( bdv.getViewer().getVisibilityAndGrouping().getDisplayMode() != DisplayMode.FUSED )
+		final ViewerState state = bdv.getViewer().state();
+		if ( state.getDisplayMode() != DisplayMode.FUSED )
 		{
-			final boolean[] active = new boolean[ data.getSequenceDescription().getViewSetupsOrdered().size() ];
-			active[ 0 ] = true;
-			setVisibleSources( bdv.getViewer().getVisibilityAndGrouping(), active );
-			bdv.getViewer().getVisibilityAndGrouping().setDisplayMode( DisplayMode.FUSED );
+			setVisibleSources( state, state.getSources().subList( 0, 0 ) );
+			state.setDisplayMode( DisplayMode.FUSED );
 		}
 	}
 
-	public static void colorSources( final List< ConverterSetup > cs, AbstractSpimData< ? > data, Map< Channel, ARGBType > channelColors )
-	{
-		for ( int i = 0; i < cs.size(); ++i )
-		{
-			Channel ch = data.getSequenceDescription().getViewSetups().get( cs.get( i ).getSetupId() ).getAttribute( Channel.class );
-			cs.get( i ).setColor( channelColors.get( ch ) );
-		}
-	}
-
+	// TODO (TP) This has duplicates in StitchingExplorerPanel and ViewSetupExplorerPanel
+	//           Move to common utility class?
 	public static void whiteSources( final List< ConverterSetup > cs )
 	{
-		for ( int i = 0; i < cs.size(); ++i )
-			cs.get( i ).setColor( new ARGBType( ARGBType.rgba( 255, 255, 255, 255 ) ) );
+		final ARGBType white = new ARGBType( 0xffffffff );
+		cs.forEach( c -> c.setColor( white ) );
 	}
 
+	// TODO (TP) not used here, only somewhere in BigStitcher. Move?
 	public static void sameColorSources( final List< ConverterSetup > cs, final int r, final int g, final int b, final int a )
 	{
-		for ( int i = 0; i < cs.size(); ++i )
-			cs.get( i ).setColor( new ARGBType( ARGBType.rgba( r, g, b, a ) ) );
+		final ARGBType color = new ARGBType( ARGBType.rgba( r, g, b, a ) );
+		cs.forEach( c -> c.setColor( color ) );
 	}
 
-	public static void setVisibleSources( final VisibilityAndGrouping vag, final boolean[] active )
+	public static void setVisibleSources( final ViewerState state, final Collection< ? extends SourceAndConverter< ? > > active )
 	{
-		for ( int i = 0; i < active.length; ++i )
-			vag.setSourceActive( i, active[ i ] );
+		final List< SourceAndConverter< ? > > inactive = state.snapshot().getSources();
+		inactive.removeAll( active );
+		state.setSourcesActive( inactive, false );
+		state.setSourcesActive( active, true );
 	}
 
 	public static int getBDVTimePointIndex( final TimePoint t, final AbstractSpimData< ? > data )
@@ -467,16 +478,27 @@ public abstract class FilteredAndGroupedExplorerPanel< AS extends AbstractSpimDa
 		return 0;
 	}
 
-	public static int getBDVSourceIndex( final BasicViewSetup vs, final AbstractSpimData< ? > data )
-	{
-		final List< ? extends BasicViewSetup > list = data.getSequenceDescription().getViewSetupsOrdered();
-
-		for ( int i = 0; i < list.size(); ++i )
-			if ( list.get( i ).getId() == vs.getId() )
-				return i;
-
-		return 0;
-	}
+	// TODO (TP) replace by the alternative version below
+	//           OR (preferably) revise usage site
+//	public static int getBDVSourceIndex( final BasicViewSetup vs, final AbstractSpimData< ? > data )
+//	{
+//		final List< ? extends BasicViewSetup > list = data.getSequenceDescription().getViewSetupsOrdered();
+//
+//		for ( int i = 0; i < list.size(); ++i )
+//			if ( list.get( i ).getId() == vs.getId() )
+//				return i;
+//
+//		return 0;
+//	}
+//	public static int getBDVSourceIndex( final BasicViewSetup vs, final AbstractSpimData< ? > data, final BigDataViewer bdv )
+//	{
+//		bdv.getViewer().state().getSources().forEach( soc -> {
+//			int i = ( ( AbstractSpimSource< ? > ) soc.getSpimSource() ).getSetupId();
+//			if ( i == vs.getId() )
+//				...
+//		} );
+//		return 0;
+//	}
 
 	public Set< List< BasicViewDescription< ? > > > getSelectedRows()
 	{
@@ -566,9 +588,7 @@ public abstract class FilteredAndGroupedExplorerPanel< AS extends AbstractSpimDa
 					if ( p != null && p.bdv != null && p.bdv.getViewerFrame().isVisible() )
 					{
 						TransformationTools.reCenterViews( p.bdv,
-								selectedRows.stream().collect(
-										HashSet< BasicViewDescription< ? > >::new,
-										( a, b ) -> a.addAll( b ), ( a, b ) -> a.addAll( b ) ),
+								selectedRows.stream().flatMap( List::stream ).collect( Collectors.toSet() ),
 								data.getViewRegistrations() );
 					}
 				}
